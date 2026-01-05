@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Digit Classifier (TensorFlow.js)</title>
+  <title>Digit Classifier</title>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
   <style>
     body { font-family: Arial, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 16px; }
@@ -18,7 +18,7 @@
 </head>
 <body>
   <h2>Draw a digit (0–9)</h2>
-  <p class="small">This runs entirely in your browser using TensorFlow.js + a pretrained CNN model.</p>
+  <p class="small"></p>
 
   <div class="row">
     <div>
@@ -30,10 +30,7 @@
     </div>
 
     <div class="box">
-      <div class="pred" id="status">Loading model…</div>
       <div class="pred" id="result"></div>
-      <p class="small">Top probabilities (softmax):</p>
-      <pre id="probs"></pre>
 
       <!-- hidden canvas used for preprocessing to 28x28 -->
       <canvas id="mini" width="28" height="28" style="display:none;"></canvas>
