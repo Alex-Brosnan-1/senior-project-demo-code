@@ -1,0 +1,153 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Digit Classifier (TensorFlow.js)</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 16px; }
+    .row { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+    canvas { border: 1px solid #333; touch-action: none; }
+    button { padding: 10px 14px; margin-right: 10px; }
+    .box { min-width: 260px; }
+    .pred { font-size: 18px; line-height: 1.4; }
+    .small { color: #444; font-size: 13px; }
+    pre { background: #f6f6f6; padding: 12px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h2>Draw a digit (0–9)</h2>
+  <p class="small">This runs entirely in your browser using TensorFlow.js + a pretrained CNN model.</p>
+
+  <div class="row">
+    <div>
+      <canvas id="draw" width="280" height="280"></canvas>
+      <div style="margin-top:12px;">
+        <button id="clear">Clear</button>
+        <button id="predict">Predict</button>
+      </div>
+    </div>
+
+    <div class="box">
+      <div class="pred" id="status">Loading model…</div>
+      <div class="pred" id="result"></div>
+      <p class="small">Top probabilities (softmax):</p>
+      <pre id="probs"></pre>
+
+      <!-- hidden canvas used for preprocessing to 28x28 -->
+      <canvas id="mini" width="28" height="28" style="display:none;"></canvas>
+    </div>
+  </div>
+
+<script>
+  // Pretrained MNIST CNN model (TensorFlow.js format)
+  const MODEL_URL = "https://storage.googleapis.com/tfjs-models/tfjs/mnist_transfer_cnn_v1/model.json";
+
+  const drawCanvas = document.getElementById("draw");
+  const ctx = drawCanvas.getContext("2d");
+  const mini = document.getElementById("mini");
+  const mctx = mini.getContext("2d");
+
+  const statusEl = document.getElementById("status");
+  const resultEl = document.getElementById("result");
+  const probsEl  = document.getElementById("probs");
+
+  // Drawing setup (white background, draw in black)
+  function resetCanvas() {
+    ctx.fillStyle = "white";
+    ctx.fillRect(0, 0, drawCanvas.width, drawCanvas.height);
+    ctx.lineWidth = 18;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "black";
+    resultEl.textContent = "";
+    probsEl.textContent = "";
+  }
+  resetCanvas();
+
+  let drawing = false;
+  let lastX = 0, lastY = 0;
+
+  function getPos(evt) {
+    const rect = drawCanvas.getBoundingClientRect();
+    const x = (evt.clientX - rect.left) * (drawCanvas.width / rect.width);
+    const y = (evt.clientY - rect.top) * (drawCanvas.height / rect.height);
+    return {x, y};
+  }
+
+  drawCanvas.addEventListener("pointerdown", (e) => {
+    drawing = true;
+    const p = getPos(e);
+    lastX = p.x; lastY = p.y;
+  });
+  drawCanvas.addEventListener("pointermove", (e) => {
+    if (!drawing) return;
+    const p = getPos(e);
+    ctx.beginPath();
+    ctx.moveTo(lastX, lastY);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    lastX = p.x; lastY = p.y;
+  });
+  drawCanvas.addEventListener("pointerup", () => drawing = false);
+  drawCanvas.addEventListener("pointerleave", () => drawing = false);
+
+  document.getElementById("clear").addEventListener("click", resetCanvas);
+
+  // Preprocess drawing -> 28x28 grayscale tensor [1, 28, 28, 1]
+  function preprocess() {
+    // Downscale to 28x28
+    mctx.clearRect(0, 0, 28, 28);
+    mctx.drawImage(drawCanvas, 0, 0, 28, 28);
+
+    const img = mctx.getImageData(0, 0, 28, 28);
+    const data = img.data;
+
+    // Convert RGBA -> grayscale, invert so digit is bright on dark background (MNIST-like)
+    const pixels = new Float32Array(28 * 28);
+    for (let i = 0; i < 28 * 28; i++) {
+      const r = data[i * 4 + 0];
+      const g = data[i * 4 + 1];
+      const b = data[i * 4 + 2];
+      const gray = (r + g + b) / 3;      // 0..255, white background ~255
+      const inv = (255 - gray) / 255;    // background ~0, ink ~1
+      pixels[i] = inv;
+    }
+
+    return tf.tensor(pixels, [1, 28, 28, 1]);
+  }
+
+  let model;
+
+  async function load() {
+    model = await tf.loadLayersModel(MODEL_URL);
+    statusEl.textContent = "Model loaded. Draw a digit and click Predict.";
+  }
+
+  document.getElementById("predict").addEventListener("click", async () => {
+    if (!model) return;
+
+    resultEl.textContent = "Predicting…";
+    const x = preprocess();
+
+    const logits = model.predict(x);
+    const probs = await logits.data();
+
+    // Find best class
+    let bestIdx = 0;
+    for (let i = 1; i < probs.length; i++) {
+      if (probs[i] > probs[bestIdx]) bestIdx = i;
+    }
+
+    resultEl.textContent = `Prediction: ${bestIdx}`;
+    probsEl.textContent = probs
+      .map((p, i) => `${i}: ${p.toFixed(4)}`)
+      .join("\n");
+
+    tf.dispose([x, logits]);
+  });
+
+  load();
+</script>
+</body>
+</html>
