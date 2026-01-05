@@ -69,7 +69,7 @@
   function resetCanvas() {
     ctx.fillStyle = "white";
     ctx.fillRect(0, 0, drawCanvas.width, drawCanvas.height);
-    ctx.lineWidth = 18;
+    ctx.lineWidth = 24;
     ctx.lineCap = "round";
     ctx.strokeStyle = "black";
     resultEl.textContent = "";
@@ -111,23 +111,77 @@
   document.getElementById("clear").addEventListener("click", resetCanvas);
 
   function preprocess() {
-    mctx.clearRect(0, 0, 28, 28);
-    mctx.drawImage(drawCanvas, 0, 0, 28, 28);
+  const W = drawCanvas.width, H = drawCanvas.height;
+  const src = ctx.getImageData(0, 0, W, H).data;
 
-    const img = mctx.getImageData(0, 0, 28, 28);
-    const data = img.data;
-
-    const pixels = new Float32Array(28 * 28);
-    for (let i = 0; i < 28 * 28; i++) {
-      const r = data[i * 4];
-      const g = data[i * 4 + 1];
-      const b = data[i * 4 + 2];
-      const gray = (r + g + b) / 3;
-      pixels[i] = (255 - gray) / 255;
-    }
-
-    return tf.tensor(pixels, [1, 28, 28, 1]);
+  // Build inverted grayscale (ink ~1, background ~0)
+  const g = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) {
+    const r = src[i * 4], gr = src[i * 4 + 1], b = src[i * 4 + 2];
+    const gray = (r + gr + b) / 3;
+    g[i] = (255 - gray) / 255;
   }
+
+  // Bounding box of ink
+  const t = 0.12;
+  let minX = W, minY = H, maxX = -1, maxY = -1;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (g[y * W + x] > t) {
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  // Nothing drawn
+  if (maxX < 0) return tf.zeros([1, 28, 28, 1]);
+
+  // Add margin
+  const margin = 18;
+  minX = Math.max(0, minX - margin);
+  minY = Math.max(0, minY - margin);
+  maxX = Math.min(W - 1, maxX + margin);
+  maxY = Math.min(H - 1, maxY + margin);
+
+  const boxW = maxX - minX + 1;
+  const boxH = maxY - minY + 1;
+
+  // Crop into an offscreen canvas
+  const crop = document.createElement("canvas");
+  crop.width = boxW;
+  crop.height = boxH;
+  const cctx = crop.getContext("2d");
+  cctx.drawImage(drawCanvas, minX, minY, boxW, boxH, 0, 0, boxW, boxH);
+
+  // Place into 28x28 centered, scaled to ~20x20 (MNIST-ish)
+  mctx.clearRect(0, 0, 28, 28);
+  mctx.fillStyle = "white";
+  mctx.fillRect(0, 0, 28, 28);
+
+  const target = 20;
+  const s = Math.min(target / boxW, target / boxH);
+  const newW = Math.max(1, Math.round(boxW * s));
+  const newH = Math.max(1, Math.round(boxH * s));
+  const dx = Math.floor((28 - newW) / 2);
+  const dy = Math.floor((28 - newH) / 2);
+
+  mctx.drawImage(crop, 0, 0, boxW, boxH, dx, dy, newW, newH);
+
+  // Convert 28x28 -> tensor (invert)
+  const img = mctx.getImageData(0, 0, 28, 28).data;
+  const pixels = new Float32Array(28 * 28);
+  for (let i = 0; i < 28 * 28; i++) {
+    const r = img[i * 4], gr = img[i * 4 + 1], b = img[i * 4 + 2];
+    const gray = (r + gr + b) / 3;
+    pixels[i] = (255 - gray) / 255;
+  }
+
+  return tf.tensor(pixels, [1, 28, 28, 1]);
+}
+
 
   let model;
 
